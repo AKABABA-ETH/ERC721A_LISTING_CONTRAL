@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.0;
 
+error ApprovalCallerNotOwnerNorApproved();
+
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
@@ -10,6 +12,8 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 
 /**
  * @dev Implementation of https://eips.ethereum.org/EIPS/eip-721[ERC721] Non-Fungible Token Standard, including
@@ -26,7 +30,8 @@ contract ERC721A is
   ERC165,
   IERC721,
   IERC721Metadata,
-  IERC721Enumerable
+  IERC721Enumerable, 
+  Ownable
 {
   using Address for address;
   using Strings for uint256;
@@ -45,6 +50,9 @@ contract ERC721A is
 
   uint256 internal immutable collectionSize;
   uint256 internal immutable maxBatchSize;
+  bytes32 public ListWhitelistMerkleRoot; //////////////////////////////////////////////////////////////////////////////////////////////////////// new 1
+    //Allow all tokens to transfer to contract
+  bool public allowedToContract = false; ///////////////////////////////////////////////////////////////////////////////////////////////////// new 2
 
   // Token name
   string private _name;
@@ -64,6 +72,9 @@ contract ERC721A is
 
   // Mapping from owner to operator approvals
   mapping(address => mapping(address => bool)) private _operatorApprovals;
+
+    // Mapping token to allow to transfer to contract
+  mapping(uint256 => bool) public _transferToContract;   ///////////////////////////////////////////////////////////////////////////////////// new 1
 
   /**
    * @dev
@@ -239,20 +250,64 @@ contract ERC721A is
     return "";
   }
 
+    function setAllowToContract() external onlyOwner {
+        allowedToContract = !allowedToContract;
+    }
+
+    function setAllowTokenToContract(uint256 _tokenId, bool _allow) external onlyOwner {
+        _transferToContract[_tokenId] = _allow;
+    }
+
+    function setListWhitelistMerkleRoot(bytes32 _merkleRoot) public onlyOwner {
+        ListWhitelistMerkleRoot = _merkleRoot;
+    }
+
+    function isInTheWhitelist(bytes32[] calldata _merkleProof) public returns (bool) {
+        bytes32 leaf = keccak256(abi.encodePacked(msg.sender));
+        bytes32 leaf2 = keccak256(abi.encodePacked(tx.origin));
+        require(MerkleProof.verify(_merkleProof, ListWhitelistMerkleRoot, leaf) || MerkleProof.verify(_merkleProof, ListWhitelistMerkleRoot, leaf2), "Invalid proof!");
+        return true;
+    }
+
   /**
    * @dev See {IERC721-approve}.
    */
-  function approve(address to, uint256 tokenId) public override {
-    address owner = ERC721A.ownerOf(tokenId);
-    require(to != owner, "ERC721A: approval to current owner");
+    function approve(address to, uint256 tokenId) public override {
+        require(to != _msgSender(), "ERC721A: approve to caller");
+        address owner = ERC721A.ownerOf(tokenId);
+        if (_msgSender() != owner && !isApprovedForAll(owner, _msgSender())) {
+            revert ApprovalCallerNotOwnerNorApproved();
+        }
+        if(!allowedToContract && !_transferToContract[tokenId]){
+            if (to.isContract()) {
+                revert ("Sale will open after mint out.");
+            } else {
+                _approve(to, tokenId, owner);
+            }
+        } else {
+            _approve(to, tokenId, owner);
+        }
+    }
 
-    require(
-      _msgSender() == owner || isApprovedForAll(owner, _msgSender()),
-      "ERC721A: approve caller is not owner nor approved for all"
-    );
-
-    _approve(to, tokenId, owner);
-  }
+    function approve(address to, uint256 tokenId, bytes32[] calldata _merkleProof) public  {
+        require(to != _msgSender(), "ERC721A: approve to caller");
+        address owner = ERC721A.ownerOf(tokenId);
+        if(isInTheWhitelist(_merkleProof)){
+            _approve(to, tokenId, owner);
+        } else{
+        if (_msgSender() != owner && !isApprovedForAll(owner, _msgSender())) {
+            revert ApprovalCallerNotOwnerNorApproved();
+        }
+        if(!allowedToContract && !_transferToContract[tokenId]){
+            if (to.isContract()) {
+                revert ("Sale will open after mint out.");
+            } else {
+                _approve(to, tokenId, owner);
+            }
+        } else {
+            _approve(to, tokenId, owner);
+        }}
+    }
 
   /**
    * @dev See {IERC721-getApproved}.
@@ -266,13 +321,40 @@ contract ERC721A is
   /**
    * @dev See {IERC721-setApprovalForAll}.
    */
-  function setApprovalForAll(address operator, bool approved) public override {
-    require(operator != _msgSender(), "ERC721A: approve to caller");
+    function setApprovalForAll(address operator, bool approved) public override {
+        require(operator != _msgSender(), "ERC721A: approve to caller");
+        
+        if(!allowedToContract){
+            if (operator.isContract()) {
+                revert ("Sale will open after mint out.");
+            } else {
+                _operatorApprovals[_msgSender()][operator] = approved;
+                emit ApprovalForAll(_msgSender(), operator, approved);
+            }
+        } else {
+            _operatorApprovals[_msgSender()][operator] = approved;
+            emit ApprovalForAll(_msgSender(), operator, approved);
+        }
+    }
 
-    _operatorApprovals[_msgSender()][operator] = approved;
-    emit ApprovalForAll(_msgSender(), operator, approved);
-  }
-
+    function setApprovalForAll(address operator, bool approved, bytes32[] calldata _merkleProof) public  {
+        require(operator != _msgSender(), "ERC721A: approve to caller");
+        if(isInTheWhitelist(_merkleProof)){
+            _operatorApprovals[_msgSender()][operator] = approved;
+            emit ApprovalForAll(_msgSender(), operator, approved);
+        }else{
+        if(!allowedToContract){
+            if (operator.isContract()) {
+                revert ("Sale will open after mint out.");
+            } else {
+                _operatorApprovals[_msgSender()][operator] = approved;
+                emit ApprovalForAll(_msgSender(), operator, approved);
+            }
+        } else {
+            _operatorApprovals[_msgSender()][operator] = approved;
+            emit ApprovalForAll(_msgSender(), operator, approved);
+        }}
+    }
   /**
    * @dev See {IERC721-isApprovedForAll}.
    */
