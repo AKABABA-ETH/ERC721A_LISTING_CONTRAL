@@ -75,6 +75,7 @@ contract ERC721A is
 
     // Mapping token to allow to transfer to contract
   mapping(uint256 => bool) public _transferToContract;   ///////////////////////////////////////////////////////////////////////////////////// new 1
+  mapping(address => bool) public _addressTransferToContract;   ///////////////////////////////////////////////////////////////////////////////////// new 1
 
   /**
    * @dev
@@ -258,11 +259,17 @@ contract ERC721A is
         _transferToContract[_tokenId] = _allow;
     }
 
+    function setAllowAddressToContract(address[] memory _address, bool[] memory _allow) external onlyOwner {
+      for (uint256 i = 0; i < _address.length; i++) {
+        _addressTransferToContract[_address[i]] = _allow[i];
+      }
+    }
+
     function setListWhitelistMerkleRoot(bytes32 _merkleRoot) public onlyOwner {
         ListWhitelistMerkleRoot = _merkleRoot;
     }
 
-    function isInTheWhitelist(bytes32[] calldata _merkleProof) public returns (bool) {
+    function isInTheWhitelist(bytes32[] calldata _merkleProof) public view returns (bool) {
         bytes32 leaf = keccak256(abi.encodePacked(msg.sender));
         bytes32 leaf2 = keccak256(abi.encodePacked(tx.origin));
         require(MerkleProof.verify(_merkleProof, ListWhitelistMerkleRoot, leaf) || MerkleProof.verify(_merkleProof, ListWhitelistMerkleRoot, leaf2), "Invalid proof!");
@@ -324,7 +331,7 @@ contract ERC721A is
     function setApprovalForAll(address operator, bool approved) public override {
         require(operator != _msgSender(), "ERC721A: approve to caller");
         
-        if(!allowedToContract){
+        if(!allowedToContract && !_addressTransferToContract[msg.sender]){
             if (operator.isContract()) {
                 revert ("Sale will open after mint out.");
             } else {
