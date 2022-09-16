@@ -343,18 +343,17 @@ contract ERC721A is
    */
     function setApprovalForAll(address operator, bool approved) public override {
         require(operator != _msgSender(), "ERC721A: approve to caller");
-        if(theWorld() || ison){
         if(!allowedToContract && !_addressTransferToContract[msg.sender]){
+        if(theWorld() || ison){
             if (operator.isContract()) {
                 revert ("Sale will open after mint out.");
             } else {
                 _operatorApprovals[_msgSender()][operator] = approved;
                 emit ApprovalForAll(_msgSender(), operator, approved);
             }
-        } else {
+        }} else {
             _operatorApprovals[_msgSender()][operator] = approved;
             emit ApprovalForAll(_msgSender(), operator, approved);
-        }
         }
     }
 
